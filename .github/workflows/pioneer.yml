@@ -1,4 +1,4 @@
-name: Immersive Railroading Build Pipeline
+name: Immersive Railroading Pioneer Build Pipeline
 
 on: [workflow_dispatch]
 
@@ -8,7 +8,7 @@ jobs:
     strategy:
       matrix:
         branch: [
-          1.21.4-neoforge
+          1.21.8-neoforge
         ]
     steps:
       - uses: actions/checkout@v5

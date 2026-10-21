@@ -220,7 +220,10 @@ public abstract class EntityRidableRollingStock extends EntityBuildableRollingSt
 			});
 			remount.clear();
 			for (Player source : getWorld().getEntities(Player.class)) {
-				if (source.getRiding() == null && getDefinition().getModel().getDoors().stream().anyMatch(x -> x.isAtOpenDoor(source, this, Door.Types.EXTERNAL))) {
+				if (source.getRiding() == null &&
+					getDefinition().getModel().getDoors().stream().anyMatch(
+					x -> x.isAtOpenDoor(source, this, Door.Types.EXTERNAL))
+					/*&& source.getMovementInput()*/) { //require motion/movement input in the doors direction?
 					this.addPassenger(source);
 				}
 			}

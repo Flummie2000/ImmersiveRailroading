@@ -100,6 +100,9 @@ public class Config {
 
         @Comment("Enable CARGO_FILL and CARGO_ITEMS load items dropped to the world")
         public static boolean allowCargoLoadDroppedItem = true;
+
+		@Comment("Disable force dismount by sneaking when a door is present")
+		public static boolean denyForceDismount = true;
     }
 
 	@Name("balance")

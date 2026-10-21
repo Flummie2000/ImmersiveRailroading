@@ -103,6 +103,13 @@ public abstract class EntityRidableRollingStock extends EntityBuildableRollingSt
 		}
 		return getPassengerCount() < this.getDefinition().getMaxPassengers();
 	}
+
+	@Override
+	public boolean canPassengerLeaveVehicle(Entity passenger) {
+		EntityRidableRollingStock stock = (EntityRidableRollingStock)passenger.getRiding();
+		if(stock == null) return true;
+		return (!stock.hasExit() || !Config.ImmersionConfig.denyForceDismount); //also check door proportions and navmesh connection?
+	}
 	
 	@Override
 	public boolean shouldRiderSit(Entity passenger) {
@@ -135,6 +142,11 @@ public abstract class EntityRidableRollingStock extends EntityBuildableRollingSt
 				.min(Comparator.comparingDouble(d -> d.center(this).distanceTo(source.getPosition())))
 				.filter(x -> !x.isOpen(this))
 				.isPresent();
+	}
+
+	public boolean hasExit() {
+		return this.getDefinition().getModel().getDoors().stream()
+				.anyMatch(d -> d.type == Door.Types.EXTERNAL);
 	}
 
 	private Vec3d playerMovement(Player source, Vec3d offset) {

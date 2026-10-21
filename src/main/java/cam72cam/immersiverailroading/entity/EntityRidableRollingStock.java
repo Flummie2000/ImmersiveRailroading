@@ -37,6 +37,7 @@ public abstract class EntityRidableRollingStock extends EntityBuildableRollingSt
 	// Hack to remount players if they were seated
 	private Map<UUID, Vec3d> remount = new HashMap<>();
 
+	private final Map<UUID, Runnable> deferredPassengerOps = new HashMap<>();
 
 
 	@Override
@@ -187,7 +188,7 @@ public abstract class EntityRidableRollingStock extends EntityBuildableRollingSt
 				getWorld().isServer &&
 				!this.getDefinition().correctPassengerBounds(gauge, offset, shouldRiderSit(source)).equals(offset)
 		) {
-        	this.removePassenger(source);
+			deferredPassengerOps.putIfAbsent(source.getUUID(), () -> this.removePassenger(source));
 		}
 
 		return offset;
@@ -211,6 +212,13 @@ public abstract class EntityRidableRollingStock extends EntityBuildableRollingSt
 					this.addPassenger(source);
 				}
 			}
+		}
+
+		if (!deferredPassengerOps.isEmpty()) {
+			List<Runnable> ops = new ArrayList<>(deferredPassengerOps.values());
+			deferredPassengerOps.clear();
+			ops.forEach(Runnable::run);
+			ops.clear();
 		}
 	}
 

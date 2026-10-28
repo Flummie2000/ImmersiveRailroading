@@ -107,8 +107,9 @@ public abstract class EntityRidableRollingStock extends EntityBuildableRollingSt
 
 	@Override
 	public boolean canPassengerLeaveVehicle(Entity passenger) {
-		EntityRidableRollingStock stock = (EntityRidableRollingStock)passenger.getRiding();
-		if(stock == null) return true;
+		Entity ridden = passenger.getRiding();
+		if (ridden == null) return true;
+		EntityRidableRollingStock stock = (EntityRidableRollingStock)ridden;
 		return (!stock.hasExit() || !Config.ImmersionConfig.denyForceDismount); //also check door proportions and navmesh connection?
 	}
 	

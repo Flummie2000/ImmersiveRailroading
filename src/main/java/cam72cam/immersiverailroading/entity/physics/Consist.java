@@ -35,6 +35,12 @@ public class Consist {
         public double force_KgM_S_S;
         public double friction_KgM_S_S;
 
+        public double interferenceNewtons;
+        public double interferenceJoules;
+        public double thrustForce_KgM_S_S;
+        public double impactForce_KgM_S_S;
+        public double wallDirection;
+
         public Linkage nextLink;
         public Linkage prevLink;
 
@@ -49,6 +55,9 @@ public class Consist {
             this.velocity_M_S = Speed.fromMinecraft(state.velocity).metric()/3.6 * direction;
             this.force_KgM_S_S = state.forcesNewtons() * direction;
             this.friction_KgM_S_S = state.frictionNewtons();
+            this.wallDirection = state.blockedDirection * direction;
+            this.interferenceNewtons = state.getInterferenceNewtons();
+            this.interferenceJoules = state.getInterferenceJoules();
         }
 
         public void setup() {
@@ -152,6 +161,49 @@ public class Consist {
             return particles;
         }
 
+        private boolean movingIntoWall() {
+            return wallDirection != 0 && Math.signum(velocity_M_S) == wallDirection;
+        }
+
+        private boolean canBreak() {
+            return !Double.isInfinite(interferenceNewtons);
+        }
+
+        public void applyWallThrust(double dt_S) {
+            if (!movingIntoWall()) return;
+            double groupMass = 0;
+            for (Particle p : interactingParticles(wallDirection > 0)) {
+                groupMass += p.mass_Kg;
+            }
+            thrustForce_KgM_S_S = Math.max(thrustForce_KgM_S_S, groupMass * Math.abs(velocity_M_S) / dt_S);
+            if (canBreak() && thrustForce_KgM_S_S >= interferenceJoules) {
+                brokeWall = true;
+                wallDirection = 0;
+                return;
+            }
+            velocity_M_S = 0;
+        }
+
+        public void applyWallImpact() {
+            if (!movingIntoWall()) return;
+            double kinetic = 0.5 * mass_Kg * velocity_M_S * velocity_M_S;
+            impactForce_KgM_S_S = Math.max(impactForce_KgM_S_S, kinetic);
+            if (canBreak() && kinetic >= interferenceJoules) {
+                double remaining = velocity_M_S * velocity_M_S - 2 * interferenceJoules / mass_Kg;
+                velocity_M_S = Math.copySign(Math.sqrt(Math.max(0, remaining)), wallDirection);
+                brokeWall = true;
+                wallDirection = 0;
+                return;
+            }
+            velocity_M_S = 0;
+        }
+
+        public boolean brokeWall;
+
+        public double absorbedForce_KgM_S_S() {
+            return thrustForce_KgM_S_S + impactForce_KgM_S_S;
+        }
+
         public void processCollisions() {
             if (nextLink == null) {
                 return;
@@ -222,7 +274,7 @@ public class Consist {
             // Calculate the applied velocity from this particle.  This should not include the coupler adjustment speed/distance below
             state.velocity = velocityMPT * direction;
 
-            SimulationState future =  this.state.next((position_M - initial_position_M) * direction, blocksAlreadyBroken);
+            SimulationState future =  this.state.next((position_M - initial_position_M) * direction, blocksAlreadyBroken, absorbedForce_KgM_S_S(), brokeWall);
 
             //ImmersiveRailroading.info("Moving: %s", position_M - initial_position_M);
 
@@ -363,7 +415,14 @@ public class Consist {
                 if (debug) {
                     ImmersiveRailroading.info("CORRECTION %s %s%n", nextParticle.hashCode(), currentDistance_M - minDistance_M);
                 }
-                nextParticle.position_M = prevParticle.position_M + (minDistance_M);
+                if (nextParticle.wallDirection > 0) {
+                    prevParticle.position_M = nextParticle.position_M - minDistance_M;
+                    if (prevParticle.prevLink != null) {
+                        prevParticle.prevLink.correctDistance();
+                    }
+                } else {
+                    nextParticle.position_M = prevParticle.position_M + (minDistance_M);
+                }
                 if (nextParticle.velocity_M_S < prevParticle.velocity_M_S) {
                     //nextParticle.velocity_M_S = prevParticle.velocity_M_S;
                 }
@@ -598,10 +657,13 @@ public class Consist {
                 }
             }
 
+            particles.forEach(Particle::applyWallImpact);
             particles.forEach(p -> p.computeVelocity(dt_S));
+            particles.forEach(p -> p.applyWallThrust(dt_S));
             particles.forEach(p -> p.applyFriction(dt_S));
             particles.forEach(Particle::processCollisions);
             particles.forEach(p -> p.applyFriction(dt_S));
+            particles.forEach(Particle::applyWallImpact);
             particles.forEach(p -> p.computePosition(dt_S));
         }
 

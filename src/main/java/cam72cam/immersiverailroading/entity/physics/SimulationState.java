@@ -55,8 +55,12 @@ public class SimulationState {
     public List<Vec3i> trackToUpdate;
     // Blocks that the stock would need to break to move
     public List<Vec3i> interferingBlocks;
+    // How hard is the hardest interfering block
+    public float interferingHardness;
     // How much force required to break the interfering blocks
     public float interferingResistance;
+    // Which direction is blocked from moving further
+    public int blockedDirection;
     // Blocks that were actually broken and need to be removed
     public List<Vec3i> blocksToBreak;
 
@@ -208,6 +212,7 @@ public class SimulationState {
 
         calculateCouplerPositions();
 
+        blockedDirection = 0;
         calculateBlockCollisions(Collections.emptyList());
         blocksToBreak = Collections.emptyList();
 
@@ -246,6 +251,8 @@ public class SimulationState {
         trackToUpdate = prev.trackToUpdate;
         interferingBlocks = prev.interferingBlocks;
         interferingResistance = prev.interferingResistance;
+        interferingHardness = prev.interferingHardness;
+        blockedDirection = prev.blockedDirection;
         blocksToBreak = Collections.emptyList();
         directResistance = prev.directResistance;
 
@@ -291,6 +298,7 @@ public class SimulationState {
         this.trackToUpdate = new ArrayList<>();
         this.interferingBlocks = new ArrayList<>();
         this.interferingResistance = 0;
+        this.interferingHardness = 0;
 
         for (Vec3i bp : collidingBlocks) {
             if (blocksAlreadyBroken.contains(bp)) {
@@ -305,11 +313,29 @@ public class SimulationState {
                         && !BlockUtil.isIRRail(config.world, bp.up())) {
                     if (bp.y >= position.y - (position.y % 1)) { // Prevent it from breaking blocks under the pitched train (bb expanded)
                         interferingBlocks.add(bp);
-                        interferingResistance += config.world.getBlockHardness(bp);
+                        float hardness = config.world.getBlockHardness(bp);
+                        if (hardness < 0) {
+                            interferingHardness = -1;
+                        } else {
+                            interferingResistance += hardness;
+                            if (interferingHardness >= 0) interferingHardness = Math.max(interferingHardness, hardness);
+                        }
                     }
                 }
             }
         }
+    }
+
+    // Force that the train must exceed to break through the interfering blocks (Infinity for Unbreakable)
+    public double getInterferenceNewtons() {
+        return interferingHardness < 0
+                ? Double.POSITIVE_INFINITY
+                : interferingHardness * 1000 * Config.ConfigDamage.blockHardness;
+    }
+
+    // Energy needed to crush all breakable interfering blocks (1 m crush distance per block)
+    public double getInterferenceJoules() {
+        return interferingResistance * 1000 * Config.ConfigDamage.blockHardness;
     }
 
     public SimulationState next() {
@@ -318,33 +344,42 @@ public class SimulationState {
         return next;
     }
 
-    public SimulationState next(double distance, List<Vec3i> blocksAlreadyBroken) {
+    public SimulationState next(double distance, List<Vec3i> blocksAlreadyBroken, double absorbedForce_KgM_S_S, boolean brokeWall) {
+        if (brokeWall) {
+            this.blocksToBreak = this.interferingBlocks;
+            blocksAlreadyBroken.addAll(this.blocksToBreak);
+        }
+
         SimulationState next = new SimulationState(this);
         next.moveAlongTrack(distance);
         if (this.position.equals(next.position)) {
             next.velocity = 0;
+            if (next.blockedDirection != 0 && (absorbedForce_KgM_S_S > 0 || brokeWall)) {
+                next.recheckBlocks(distance, blocksAlreadyBroken);
+            }
         } else {
             next.calculateCouplerPositions();
             next.bounds = next.config.bounds.apply(next);
 
-            // We will actually break the blocks
-            this.blocksToBreak = this.interferingBlocks;
-            // We can now ignore those positions for the rest of the simulation
-            blocksAlreadyBroken.addAll(this.blocksToBreak);
-
             // Calculate the next states interference
             double minDist = Math.max(0.5, Math.abs(velocity*4));
-            if (next.recalculatedAt.distanceToSquared(next.position) > minDist * minDist) {
-                next.calculateBlockCollisions(blocksAlreadyBroken);
-                next.recalculatedAt = next.position;
-                next.directResistance = config.directResistanceNewtons.apply(trackToUpdate);
-            } else {
-                // We put off calculating collisions for now
-                next.interferingBlocks = Collections.emptyList();
-                next.interferingResistance = 0;
+            boolean farEnough = next.recalculatedAt.distanceToSquared(next.position) > minDist * minDist;
+            if (farEnough || next.blockedDirection != 0 || brokeWall) {
+                next.recheckBlocks(distance, blocksAlreadyBroken);
             }
         }
         return next;
+    }
+
+    private void recheckBlocks(double distance, List<Vec3i> blocksAlreadyBroken) {
+        calculateBlockCollisions(blocksAlreadyBroken);
+        if (interferingBlocks.isEmpty()) {
+            blockedDirection = 0;
+        } else if (blockedDirection == 0) {
+            blockedDirection = (int) Math.signum(distance);
+        }
+        recalculatedAt = position;
+        directResistance = config.directResistanceNewtons.apply(trackToUpdate);
     }
 
     public void update(EntityCoupleableRollingStock stock) {
@@ -468,7 +503,7 @@ public class SimulationState {
 
         brakeAdhesionNewtons *= Config.ConfigBalance.brakeMultiplier;
 
-        return rollingResistanceNewtons + blockResistanceNewtons + brakeAdhesionNewtons + directResistance + startingFriction;
+        return rollingResistanceNewtons + brakeAdhesionNewtons + directResistance + startingFriction;
     }
 
     private boolean checkTileType(TileRailBase base, TrackItems type) {

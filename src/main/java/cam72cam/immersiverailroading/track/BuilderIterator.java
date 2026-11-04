@@ -48,6 +48,7 @@ public abstract class BuilderIterator extends BuilderBase implements IIterableTr
 		HashMap<Vec3i, List<Vec3d>> allTopNormals = new HashMap<>();
 		HashMap<Vec3i, List<Vec3d>> allTopPositions = new HashMap<>();
 		HashMap<Vec3i, List<Float>> allBedHeights = new HashMap<>();
+		HashMap<Vec3i, List<Float>> allBedMins = new HashMap<>();
 
 		List<Vec3i> trackBlockPositions = new ArrayList<>();
 		HashSet<Vec3i> flexPositions = new HashSet<>();
@@ -107,15 +108,13 @@ public abstract class BuilderIterator extends BuilderBase implements IIterableTr
                 Vec3d topFacing = computeTopFaceNormal(path, i, q);
                 double rollPitchDelta;
 
-                if(rollEffectTile) {
-                    Vec3d planePoint = new Vec3d(
-                            facePivot.x + 0.5,
-                            facePivot.y,
-                            facePivot.z + 0.5
-                    );
-                    float localHeight = BlockCutHelper.getCutCenterHeight(new Plane(planePoint.subtract(gag), topFacing));
-
-                    rollPitchDelta = localHeight - (facePivot.y - posY);
+				float localMin = 0;
+				if(rollEffectTile) {
+					Vec3d planePoint = new Vec3d(facePivot.x + 0.5, facePivot.y, facePivot.z + 0.5);
+					float localHeight = BlockCutHelper.getCutCenterHeight(new Plane(planePoint.subtract(gag), topFacing));
+					// plane through the sample point itself, so it always crosses this block
+					localMin = BlockCutHelper.getCutPlaneMinHeight(new Plane(facePivot.add(nextUp).subtract(gag), topFacing));
+					rollPitchDelta = localHeight - (facePivot.y - posY);
                 } else {//legacy
                     rollPitchDelta = 0;
                 }
@@ -148,6 +147,7 @@ public abstract class BuilderIterator extends BuilderBase implements IIterableTr
                     List<Float> currentBedHeights = allBedHeights.get(gag) != null ? allBedHeights.get(gag) : new ArrayList<>();
                     currentBedHeights.add(heightResult);
                     allBedHeights.put(gag, currentBedHeights);
+					allBedMins.computeIfAbsent(gag, k -> new ArrayList<>()).add(localMin);
 
                     List<Vec3d> currentTopNormals = allTopNormals.get(gag) != null ? allTopNormals.get(gag) : new ArrayList<>();
                     currentTopNormals.add(topFacing);
@@ -204,8 +204,14 @@ public abstract class BuilderIterator extends BuilderBase implements IIterableTr
 			}
 			Vec3d avgTopPosition = topPositionSum.scale(1d / positionCount);
 
-			if(avgTopNormal.y < 0) averageBedHeight = -averageBedHeight;
-			bedHeights.put(gapPos, averageBedHeight);
+			float bedValue;
+			if (avgTopNormal.y < 0) {
+				averageBedHeight = -averageBedHeight;
+				bedValue = Collections.max(allBedMins.get(gapPos));    // downward-facing: unchanged behaviour
+			} else {
+				bedValue = Collections.min(allBedMins.get(gapPos));    // lowest plane point over all samples
+			}
+			bedHeights.put(gapPos, bedValue);
 			railHeights.put(gapPos, averageBedHeight);
 			planes.put(gapPos, new Plane(new Vec3d(avgTopPosition.x, avgTopPosition.y, avgTopPosition.z), avgTopNormal.scale(-1)));
 		}

@@ -26,6 +26,7 @@ public class RailBaseModel {
 
 		float bedHeight = te.getBedHeight();
         Plane bedFace = te.getBedFace();
+		boolean noBed = bedFace == null && bedHeight >= 0 && bedHeight < 1e-4f;
 		int snow = te.getSnowLayers();
 		Augment augment = te.getAugment();
 		double gauged = te.getRenderGauge();
@@ -87,7 +88,7 @@ public class RailBaseModel {
 
 			return model;
 		} else if (!bed.isEmpty()) {
-			model.addItemBlock(bed, bedFace == null ? bedblockMatrix4 : new Matrix4(), bedFace);
+			if (!noBed) model.addItemBlock(bed, bedFace == null ? bedblockMatrix4 : new Matrix4(), bedFace);
 			return model;
 		}
 

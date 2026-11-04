@@ -21,6 +21,8 @@ public class RailBaseRender {
 				float bedHeight = base.getBedHeight();
 				Plane bedFace = base.getBedFace();
 
+				if (bedFace == null && bedHeight >= 0 && bedHeight < 1e-4f) continue;
+
 				if (bedFace != null) bedHeight = 1;
 				Matrix4 matrix4;
 				if(bedHeight > 0) matrix4 = new Matrix4().scale(1, bedHeight, 1);

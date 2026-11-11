@@ -251,6 +251,11 @@ public abstract class EntityMoveableRollingStock extends EntityRidableRollingSto
                             .sendToObserving(this);
                 }
 
+                //doesn't work like this, make entitiesToKill hand over damage numbers?
+                for (Entity entity : state.entitiesToKill) {
+                    entity.kill();
+                }
+
                 for (Vec3i bp : state.blocksToBreak) {
                     getWorld().breakBlock(bp, Config.ConfigDamage.dropSnowBalls || !getWorld().isSnow(bp));
                 }

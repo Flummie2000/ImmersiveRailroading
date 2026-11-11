@@ -1,9 +1,7 @@
 package cam72cam.immersiverailroading.entity.physics;
 
 import cam72cam.immersiverailroading.Config;
-import cam72cam.immersiverailroading.entity.EntityCoupleableRollingStock;
-import cam72cam.immersiverailroading.entity.Locomotive;
-import cam72cam.immersiverailroading.entity.Tender;
+import cam72cam.immersiverailroading.entity.*;
 import cam72cam.immersiverailroading.entity.physics.chrono.ServerChronoState;
 import cam72cam.immersiverailroading.library.Gauge;
 import cam72cam.immersiverailroading.library.PhysicalMaterials;
@@ -15,12 +13,14 @@ import cam72cam.immersiverailroading.util.BlockUtil;
 import cam72cam.immersiverailroading.thirdparty.trackapi.IRPathingData;
 import cam72cam.immersiverailroading.util.Speed;
 import cam72cam.immersiverailroading.util.VecUtil;
+import cam72cam.mod.entity.Entity;
 import cam72cam.mod.entity.boundingbox.IBoundingBox;
 import cam72cam.mod.math.Vec3d;
 import cam72cam.mod.math.Vec3i;
 import cam72cam.mod.util.DegreeFuncs;
 import cam72cam.mod.util.FastMath;
 import cam72cam.mod.world.World;
+import net.minecraft.entity.EntityLivingBase;
 
 import java.util.*;
 import java.util.function.Function;
@@ -51,10 +51,14 @@ public class SimulationState {
     public Vec3d recalculatedAt;
     // All positions in the stock bounds
     public List<Vec3i> collidingBlocks;
+    // All entities in the stock bounds
+    public List<Entity> collidingEntities;
     // Any track within those bounds
     public List<Vec3i> trackToUpdate;
     // Blocks that the stock would need to break to move
     public List<Vec3i> interferingBlocks;
+    // Entities that the stock would need to kill to move
+    public List<Entity> interferingEntities;
     // How hard is the hardest interfering block
     public float interferingHardness;
     // How much force required to break the interfering blocks
@@ -63,6 +67,8 @@ public class SimulationState {
     public int blockedDirection;
     // Blocks that were actually broken and need to be removed
     public List<Vec3i> blocksToBreak;
+    // Entities that need to be killed
+    public List<Entity> entitiesToKill;
 
     public double directResistance;
 
@@ -215,6 +221,7 @@ public class SimulationState {
         blockedDirection = 0;
         calculateBlockCollisions(Collections.emptyList());
         blocksToBreak = Collections.emptyList();
+        entitiesToKill = Collections.emptyList();
 
         consist = stock.consist;
 
@@ -250,10 +257,12 @@ public class SimulationState {
         collidingBlocks = prev.collidingBlocks;
         trackToUpdate = prev.trackToUpdate;
         interferingBlocks = prev.interferingBlocks;
+        interferingEntities = prev.interferingEntities;
         interferingResistance = prev.interferingResistance;
         interferingHardness = prev.interferingHardness;
         blockedDirection = prev.blockedDirection;
         blocksToBreak = Collections.emptyList();
+        entitiesToKill = Collections.emptyList();
         directResistance = prev.directResistance;
 
         slackFrontPercent = prev.slackFrontPercent;
@@ -295,8 +304,11 @@ public class SimulationState {
 
     public void calculateBlockCollisions(List<Vec3i> blocksAlreadyBroken) {
         this.collidingBlocks = config.world.blocksInBounds(this.bounds);
+        //this.collidingEntities = config.world.getEntities((Entity entity) -> (config.world.getEntity(config.id, EntityMoveableRollingStock.class)).getCollision().intersects(entity.getBounds()), Entity.class);
+        this.collidingEntities = config.world.getEntitiesWithinBB(this.bounds, Entity.class);
         this.trackToUpdate = new ArrayList<>();
         this.interferingBlocks = new ArrayList<>();
+        this.interferingEntities = new ArrayList<>();
         this.interferingResistance = 0;
         this.interferingHardness = 0;
 
@@ -324,6 +336,24 @@ public class SimulationState {
                 }
             }
         }
+
+        List<UUID> noCollide = new ArrayList<>();
+        noCollide.add(this.config.id);
+        //noCollide.addAll(config.world.getEntity(config.id, EntityRollingStock.class).getPassengers().stream().map(Entity::getUUID).collect(Collectors.toCollection(ArrayList<UUID>::new)));
+        if (consist != null) noCollide.addAll(consist.ids);
+        for (Entity entity : collidingEntities) {
+
+            if ((!bounds.intersects(entity.getBounds())) || noCollide.contains(entity.getUUID()) || entity.getRiding()!=null) continue;
+            if (entity instanceof EntityRollingStock) {
+                interferingEntities.add(entity);
+                interferingHardness = -1;
+            }
+            else if (entity.getPassengerCount()==0 && (entity.internal instanceof EntityLivingBase)){
+                interferingResistance += ((EntityLivingBase)entity.internal).getHealth();
+                interferingEntities.add(entity);
+                interferingHardness = -1;
+            }
+        }
     }
 
     // Force that the train must exceed to break through the interfering blocks (Infinity for Unbreakable)
@@ -347,6 +377,7 @@ public class SimulationState {
     public SimulationState next(double distance, List<Vec3i> blocksAlreadyBroken, double absorbedForce_KgM_S_S, boolean brokeWall) {
         if (brokeWall) {
             this.blocksToBreak = this.interferingBlocks;
+            this.entitiesToKill = this.interferingEntities;
             blocksAlreadyBroken.addAll(this.blocksToBreak);
         }
 
@@ -373,7 +404,7 @@ public class SimulationState {
 
     private void recheckBlocks(double distance, List<Vec3i> blocksAlreadyBroken) {
         calculateBlockCollisions(blocksAlreadyBroken);
-        if (interferingBlocks.isEmpty()) {
+        if (interferingBlocks.isEmpty() && interferingEntities.isEmpty()) {
             blockedDirection = 0;
         } else if (blockedDirection == 0) {
             blockedDirection = (int) Math.signum(distance);

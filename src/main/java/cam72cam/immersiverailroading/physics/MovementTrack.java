@@ -53,6 +53,17 @@ public class MovementTrack {
 		return null;
 	}
 
+	public static ITrack findTrackExact(World world, Vec3d position, double gauge) {
+		double[] heightSkew = {0, 0.25, -0.25, 0.5, -0.5, 0.75, -0.75};
+		for (double height : heightSkew) {
+			ITrack te = ITrack.get(world, position.add(0, height + (position.y % 1), 0), true);
+			if (te != null && Gauge.from(te.getTrackGauges()[0]) == Gauge.from(gauge)) {
+				return te;
+			}
+		}
+		return null;
+	}
+
 	public static void iterativePathing(World world, IRPathingData startPosition, ITrack te, double gauge, Vec3d motion, double maxDistance) {
 		IRPathingData iterationPosition = startPosition.clone();
 		IRPathingData prevPosition;

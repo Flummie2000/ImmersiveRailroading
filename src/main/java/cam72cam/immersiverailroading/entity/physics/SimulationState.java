@@ -430,6 +430,12 @@ public class SimulationState {
         Vec3d nextFrontPos = nextFront.getUMCPos();
         Vec3d nextRearPos = nextRear.getUMCPos();
 
+        ITrack frontAfter = MovementTrack.findTrackExact(config.world, nextFrontPos, config.gauge.value());
+        ITrack rearAfter  = MovementTrack.findTrackExact(config.world, nextRearPos, config.gauge.value());
+        if (frontAfter == null || rearAfter == null) {
+            return;
+        }
+
         if (!nextFrontPos.equals(positionFront) && !nextRearPos.equals(positionRear)) {
             yawFront = VecUtil.toWrongYaw(nextFrontPos.subtract(positionFront));
             yawRear = VecUtil.toWrongYaw(nextRearPos.subtract(positionRear));
